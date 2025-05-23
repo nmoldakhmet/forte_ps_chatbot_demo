@@ -140,7 +140,7 @@ def main():
 
     # ─ Build RAG chain ─
     vector_store = st.session_state.vector_store
-    rag_chain = create_rag_chain(vector_store, model_option, temperature)
+    rag_chain = create_rag_chain(vector_store, 'gpt-4o-mini', temperature=0)
 
     # ─ Chat UI ─
     if "messages" not in st.session_state:
