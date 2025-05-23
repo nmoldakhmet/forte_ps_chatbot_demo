@@ -20,6 +20,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+DATA_PATH = "./data"
+
+
 # Load environment variables
 @st.cache_resource
 def load_environment():
@@ -30,8 +33,6 @@ def load_environment():
     
     # For Streamlit Cloud, get from st.secrets or environment
     return {
-        "DATA_PATH": st.secrets.get("DATA_PATH", os.getenv("DATA_PATH", "./knowledge_base")),
-        "CHROMA_PATH": st.secrets.get("CHROMA_PATH", os.getenv("CHROMA_PATH", "./chroma_db")),
         "OPENAI_API_KEY": st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
     }
 
