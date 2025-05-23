@@ -12,6 +12,8 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from chromadb.config import Settings
+
 
 # ─── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -72,19 +74,23 @@ def get_embedding_function():
         openai_api_key=OPENAI_API_KEY
     )
     
-@st.cache_resource(hash_funcs={list: lambda _: None})
-def build_vector_store(docs):
-    """Split → embed → store entirely in RAM (no persist_directory)."""
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
-    chunks = splitter.split_documents(docs)
+
+@st.cache_resource
+def build_vector_store(_docs):
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks   = splitter.split_documents(_docs)
     embed_fn = get_embedding_function()
+    settings = Settings(
+        chroma_db_impl="duckdb+parquet",
+        # persist_directory can be None or a temp dir; 
+        # it’ll live in-memory for this session either way
+        persist_directory=None,
+    )
     return Chroma.from_documents(
         documents=chunks,
         embedding=embed_fn,
-        persist_directory=None
+        client_settings=settings,
+        persist_directory=None,   # in-RAM only
     )
 
 @st.cache_resource(hash_funcs={Chroma: lambda _: None})
