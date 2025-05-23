@@ -30,7 +30,7 @@ def load_environment():
     
     # For Streamlit Cloud, get from st.secrets or environment
     return {
-        "DATA_PATH": st.secrets.get("DATA_PATH", os.getenv("DATA_PATH", "./data")),
+        "DATA_PATH": st.secrets.get("DATA_PATH", os.getenv("DATA_PATH", "./knowledge_base")),
         "CHROMA_PATH": st.secrets.get("CHROMA_PATH", os.getenv("CHROMA_PATH", "./chroma_db")),
         "OPENAI_API_KEY": st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
     }
