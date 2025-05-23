@@ -86,19 +86,20 @@ def build_vector_store(_docs):
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks   = splitter.split_documents(_docs)
     embed_fn = get_embedding_function()
-    settings = Settings(
-        chroma_db_impl="duckdb+parquet",
-        # persist_directory can be None or a temp dir; 
-        # it’ll live in-memory for this session either way
-        persist_directory=None,
+
+    # Only specify chroma_db_impl here
+    client_settings = Settings(
+        chroma_db_impl="duckdb+parquet"  
     )
+
+    # Pass persist_directory=None to from_documents, not to Settings
     return Chroma.from_documents(
         documents=chunks,
         embedding=embed_fn,
-        client_settings=settings,
-        persist_directory=None,   # in-RAM only
+        client_settings=client_settings,
+        persist_directory=None    # in-RAM only
     )
-
+    
 @st.cache_resource(hash_funcs={Chroma: lambda _: None})
 def create_rag_chain(vector_store, model_name, temperature):
     llm = ChatOpenAI(
