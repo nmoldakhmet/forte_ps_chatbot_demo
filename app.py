@@ -1,3 +1,9 @@
+import sys
+# 1) Load the drop-in sqlite3 substitute...
+import pysqlite3
+# 2) And override the stdlib name so further 'import sqlite3' uses it
+sys.modules["sqlite3"] = pysqlite3
+
 import os
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
