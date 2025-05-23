@@ -99,7 +99,6 @@ def main():
     st.markdown("Задайте вопрос по платежным системам ForteBank.")
 
     # ─ List indexed PDFs ─
-    st.sidebar.markdown("---")
     st.sidebar.header("📄 Индексированные PDF")
     pdfs = glob.glob(os.path.join(DATA_PATH, "**/*.pdf"), recursive=True)
     if pdfs:
