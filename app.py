@@ -143,7 +143,7 @@ def index_documents(chunks, embedding_function, persist_directory):
 @st.cache_resource(
     hash_funcs={Chroma: lambda _: None}   # ignore hashing for Chroma instances
 )
-def create_rag_chain(vector_store, openai_model="gpt-3.5-turbo", temperature=0):
+def create_rag_chain(vector_store, openai_model="gpt-4o-mini", temperature=0):
     """Creates the RAG chain with OpenAI's ChatGPT."""
     env_vars = load_environment()
     if not env_vars["OPENAI_API_KEY"]:
@@ -255,7 +255,7 @@ def main():
     if vector_store_exists:
         try:
             vector_store = get_vector_store(env_vars["CHROMA_PATH"])
-            rag_chain = create_rag_chain(vector_store, 'gpt-3.5-turbo', temperature=0)
+            rag_chain = create_rag_chain(vector_store, 'gpt-4o-mini', temperature=0)
             
             # Accept user input
             if prompt := st.chat_input("Задайте ваш вопрос..."):
