@@ -8,4 +8,6 @@ chromadb
 pypdf
 protobuf==3.20.3
 duckdb
+pysqlite3-binary>=0.4.7
+
 
