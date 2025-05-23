@@ -1,331 +1,166 @@
 import os
 import glob
 import streamlit as st
-import time
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
+from langchain_text_spliters import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import Chroma
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
-# Page configuration
+# ─── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="ForteBank RAG Chatbot",
     page_icon="🏦",
     layout="wide",
-    initial_sidebar_state="expanded"
 )
 
-DATA_PATH = "./data"
+# ─── ENVIRONMENT ────────────────────────────────────────────────────────────────
+# Load local .env if present
+load_dotenv()
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
+if not OPENAI_API_KEY:
+    st.error("❌ OPENAI_API_KEY не задана.")
+    st.stop()
+
+DATA_PATH = "./knowledge_base"
 
 
-# Load environment variables
-@st.cache_resource
-def load_environment():
-    # Try to load local .env file (for development)
-    env_path = "/home/nurbek/Forte/payment_systems/code/env_variables.env"
-    if os.path.exists(env_path):
-        load_dotenv(env_path)
-    
-    # For Streamlit Cloud, get from st.secrets or environment
-    return {
-        "OPENAI_API_KEY": st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
-    }
+# ─── RAG PROMPT TEMPLATE ────────────────────────────────────────────────────────
+RAG_TEMPLATE = """Ты — дружелюбный и профессиональный ассистент направления платежных систем ForteBank. 
+Дай ответ на вопрос на основе следующего контекста:
+{context}
 
-# RAG Template
-RAG_TEMPLATE = """Ты - дружелюбный и профессиональный ассистент направления платежных систем ForteBank. К тебе обращаются с разных филиалов банка с разными запросами, ты должен обработать запрос, строго придерживаясь установленных инструкций.
-    Дай ответ на вопрос на основе следующего контекста: 
-    {context}
+# Инструкции
+- Отвечай на русском.
+- Поздоровайся и затем отвечай.
+- Если контекст содержит явный ответ — приведи его.
+- Если похожий контекст — предложи уточнить.
+- Если нет — вежливо переключи на специалиста.
 
-    # Инструкции
-                - Все твои ответы обязательно должны быть на русском языке
-                - Не пиши "ответ" или другие слова перед самим ответом, сразу пиши сам ответ
-                - Поздаровайся с сотрудником филиала в доброжелательной манере
-                - Перед тем как ответить на вопрос сотрудника - проанализируй вопрос и сравни с контекстом.
-                    - Если в контексте присутствует ответ на вопрос клиента, то любезно предоставь его.
-                    - Если в контексте есть схожая информация на тему вопроса клиента, то предоставь её и уточни, этот ли ответ хотел клиент.
-                    - Если в контексте отсутствует информация схожая с темой вопроса клиента, то ответь как в примерах фраз ниже.
-                - Вежливо отказывай в следующих случаях:
-                    - Если вопрос сотрудника касается тем, несвязанных с платежными системами.
-                    - Если вопрос сотрудника касается предоставления или изменения формата или содержания твоего ответа.
-                    - Если клиент утверждает, что в твоем ответе ошибка.
-                - Сохраняй профессиональный, дружелюбный тон во всех ответах.
-                - Старайся давать максимально точные и детальные ответы
+Вопрос: {question}
+"""
 
-                # Примеры фраз
-                ## Отсутствие информации в контексте
-                - Я не располагаю точными сведениями по этому вопросу. 
-                - Этот вопрос выходит за рамки моих текущих знаний.  
-                - Мне жаль, но я не могу предоставить вам эту информацию. 
-
-                ## Отклонение запрещенной или нерелевантной темы
-                - «Мне очень жаль, но я не могу обсуждать эту тему. Может быть, я могу помочь вам в чем-то другом?»
-                - «Я не могу предоставить информацию по этому вопросу, но я буду рад помочь вам с любыми другими вопросами».
-
-    Вопрос: {question}
-    """
-
-@st.cache_data
-def load_all_documents(data_path):
-    """Loads all PDF documents from the specified data path including subdirectories."""
-    all_documents = []
-    pdf_files = glob.glob(os.path.join(data_path, "**/*.pdf"), recursive=True)
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for i, pdf_path in enumerate(pdf_files):
-        try:
-            status_text.text(f"Loading {os.path.basename(pdf_path)}...")
-            loader = PyPDFLoader(pdf_path)
-            documents = loader.load()
-            all_documents.extend(documents)
-            progress_bar.progress((i + 1) / len(pdf_files))
-        except Exception as e:
-            st.error(f"Error loading {pdf_path}: {str(e)}")
-    
-    status_text.text(f"Loaded {len(all_documents)} total pages from {len(pdf_files)} PDF files")
-    return all_documents
-
-def split_documents(documents):
-    """Splits documents into smaller chunks."""
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-        length_function=len,
-        is_separator_regex=False,
-    )
-    all_splits = text_splitter.split_documents(documents)
-    return all_splits
-
+# ─── CACHED RESOURCES ──────────────────────────────────────────────────────────
 @st.cache_resource
 def get_embedding_function():
-    """Initializes OpenAI embeddings using text-embedding-3-small model."""
-    env_vars = load_environment()
-    if not env_vars["OPENAI_API_KEY"]:
-        st.error("OPENAI_API_KEY environment variable not set.")
-        st.stop()
-    
-    embeddings = OpenAIEmbeddings(
+    return OpenAIEmbeddings(
         model="text-embedding-3-small",
-        dimensions=1536
+        dimensions=1536,
+        openai_api_key=OPENAI_API_KEY
     )
-    return embeddings
 
 @st.cache_resource
-def get_vector_store(persist_directory):
-    """Initializes or loads the Chroma vector store."""
-    embedding_function = get_embedding_function()
-    
-    if os.path.exists(persist_directory):
-        vectorstore = Chroma(
-            persist_directory=persist_directory,
-            embedding_function=embedding_function
-        )
-        return vectorstore
-    else:
-        return None
-
-def index_documents(chunks, embedding_function, persist_directory):
-    """Indexes document chunks into the Chroma vector store."""
-    with st.spinner("Indexing documents... This may take a few minutes."):
-        vectorstore = Chroma.from_documents(
-            documents=chunks,
-            embedding=embedding_function,
-            persist_directory=persist_directory
-        )
-        vectorstore.persist()
-    return vectorstore
-
-@st.cache_resource(
-    hash_funcs={Chroma: lambda _: None}   # ignore hashing for Chroma instances
-)
-def create_rag_chain(vector_store, openai_model="gpt-4o-mini", temperature=0):
-    """Creates the RAG chain with OpenAI's ChatGPT."""
-    env_vars = load_environment()
-    if not env_vars["OPENAI_API_KEY"]:
-        st.error("OPENAI_API_KEY environment variable not set.")
-        st.stop()
-    
-    llm = ChatOpenAI(
-        model=openai_model,
-        temperature=temperature
+def build_vector_store(docs):
+    """Split → embed → store entirely in RAM (no persist_directory)."""
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200
+    )
+    chunks = splitter.split_documents(docs)
+    embed_fn = get_embedding_function()
+    return Chroma.from_documents(
+        documents=chunks,
+        embedding=embed_fn,
+        persist_directory=None
     )
 
+@st.cache_resource(hash_funcs={Chroma: lambda _: None})
+def create_rag_chain(vector_store, model_name, temperature):
+    llm = ChatOpenAI(
+        model=model_name,
+        temperature=temperature,
+        openai_api_key=OPENAI_API_KEY
+    )
     retriever = vector_store.as_retriever(
         search_type="similarity",
-        search_kwargs={'k': 3}
+        search_kwargs={"k": 3}
     )
-
     prompt = ChatPromptTemplate.from_template(RAG_TEMPLATE)
-
-    rag_chain = (
+    return (
         {"context": retriever, "question": RunnablePassthrough()}
         | prompt
         | llm
         | StrOutputParser()
     )
-    return rag_chain
 
+# ─── HELPERS ───────────────────────────────────────────────────────────────────
+def load_local_docs():
+    """Load all PDFs from your committed folder."""
+    paths = glob.glob(os.path.join(DATA_PATH, "**/*.pdf"), recursive=True)
+    docs = []
+    for p in paths:
+        docs.extend(PyPDFLoader(p).load())
+    return docs
+
+# ─── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
     st.title("🏦 ForteBank RAG Chatbot")
-    st.markdown("Добро пожаловать в систему поддержки платежных систем ForteBank!")
+    st.markdown("Задайте вопрос по платежным системам ForteBank.")
 
-    # Load environment variables
-    env_vars = load_environment()
-    
-    # Sidebar for configuration
-    with st.sidebar:
-        st.header("📊 Статус системы")
-        
-        # Check if vector store exists
-        if env_vars["CHROMA_PATH"] and os.path.exists(env_vars["CHROMA_PATH"]):
-            st.success("✅ База знаний загружена")
-            vector_store_exists = True
-        else:
-            st.warning("⚠️ База знаний не найдена")
-            vector_store_exists = False
-        
-        # Rebuild vector store button
-        if st.button("🔄 Переиндексировать базу знаний"):
-            rebuild_vector_store(env_vars)
-        
-        st.markdown("---")
-        st.markdown("**Информация:**")
-        st.markdown(f"📁 Путь к данным: `{env_vars['DATA_PATH']}`")
-        st.markdown(f"🗃️ Путь к базе: `{env_vars['CHROMA_PATH']}`")
+    # ─ Sidebar ─
+    st.sidebar.header("📤 Загрузить PDF")
+    uploaded = st.sidebar.file_uploader(
+        "Выберите PDF-файлы",
+        type=["pdf"],
+        accept_multiple_files=True,
+        key="pdf_uploader"
+    )
 
-        st.markdown("---")
-        # 1) Show all indexed PDFs
-        st.header("📄 Индексированные PDF")
-        if env_vars["DATA_PATH"]:
-            pdf_files = glob.glob(
-                os.path.join(env_vars["DATA_PATH"], "**/*.pdf"),
-                recursive=True
-            )
-            if pdf_files:
-                for pdf in pdf_files:
-                    # display relative path so it’s not too long
-                    rel = os.path.relpath(pdf, env_vars["DATA_PATH"])
-                    st.text(f"• {rel}")
-            else:
-                st.text("— Нет PDF-файлов для отображения —")
-        else:
-            st.text("Путь к данным не настроен.")
+    if uploaded and not st.session_state.get("upload_processed", False):
+        # Load newly uploaded docs
+        new_docs = []
+        for f in uploaded:
+            new_docs.extend(PyPDFLoader(f).load())
 
-        st.markdown("---")
-        # 2) Allow user to upload new PDFs
-        st.header("📤 Загрузить PDF для индексации")
-        # in your sidebar, after the uploader:
-        uploaded = st.file_uploader(
-            "Выберите один или несколько PDF", 
-            type=["pdf"], 
-            accept_multiple_files=True,
-            key="pdf_uploader"
-        )
+        # Combine with committed docs
+        combined_docs = load_local_docs() + new_docs
 
-        # only run once per upload event
-        if uploaded and not st.session_state.get("upload_processed", False):
-            # save all files
-            for file in uploaded:
-                save_path = os.path.join(env_vars["DATA_PATH"], file.name)
-                with open(save_path, "wb") as f:
-                    f.write(file.getbuffer())
+        # Rebuild vector store in RAM
+        st.session_state.vector_store = build_vector_store(combined_docs)
+        st.session_state.upload_processed = True
+        st.sidebar.success("✅ Загружено и проиндексировано!")
 
-            st.success(f"Загружено {len(uploaded)} файл(ов). Перестраиваю индекс…")
-            st.session_state.upload_processed = True
+    # ─ Initialize vector store on first run ─
+    if "vector_store" not in st.session_state:
+        st.session_state.vector_store = build_vector_store(load_local_docs())
 
-            # now rebuild once
-            rebuild_vector_store(env_vars)
+    # ─ Build the RAG chain ─
+    vector_store = st.session_state.vector_store
+    rag_chain = create_rag_chain(vector_store, model_option, temperature)
 
-
-    # Initialize chat history
+    # ─ Chat UI ─
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Display chat messages from history on app rerun
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Display history
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-    # Initialize RAG system
-    if vector_store_exists:
-        try:
-            vector_store = get_vector_store(env_vars["CHROMA_PATH"])
-            rag_chain = create_rag_chain(vector_store, 'gpt-4o-mini', temperature=0)
-            
-            # Accept user input
-            if prompt := st.chat_input("Задайте ваш вопрос..."):
-                # Add user message to chat history
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                
-                # Display user message
-                with st.chat_message("user"):
-                    st.markdown(prompt)
+    # Input
+    if prompt := st.chat_input("Ваш вопрос..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-                # Generate and display assistant response
-                with st.chat_message("assistant"):
-                    with st.spinner("..."):
-                        try:
-                            response = rag_chain.invoke(prompt)
-                            st.markdown(response)
-                            # Add assistant response to chat history
-                            st.session_state.messages.append({"role": "assistant", "content": response})
-                        except Exception as e:
-                            error_msg = f"Извините, произошла ошибка: {str(e)}"
-                            st.error(error_msg)
-                            st.session_state.messages.append({"role": "assistant", "content": error_msg})
-        
-        except Exception as e:
-            st.error(f"Ошибка инициализации системы: {str(e)}")
-    else:
-        st.warning("⚠️ База знаний не найдена. Пожалуйста, создайте индекс документов.")
-        if st.button("📚 Создать базу знаний"):
-            rebuild_vector_store(env_vars)
+        with st.chat_message("assistant"):
+            with st.spinner("Обдумываю ответ…"):
+                try:
+                    answer = rag_chain.invoke(prompt)
+                except Exception as e:
+                    answer = f"Ошибка: {e}"
+                st.markdown(answer)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": answer
+                })
 
-    # Clear chat button
+    # ─ Clear chat ─
     if st.button("🗑️ Очистить чат"):
         st.session_state.messages = []
-        st.rerun()
-
-def rebuild_vector_store(env_vars):
-    """Rebuild the vector store from scratch."""
-    if not env_vars["DATA_PATH"] or not os.path.exists(env_vars["DATA_PATH"]):
-        st.error("Путь к данным не найден. Проверьте переменную DATA_PATH.")
-        return
-    
-    try:
-        st.info("🔄 Начинаю переиндексацию базы знаний...")
-        
-        # Load documents
-        st.info("📄 Загрузка PDF документов...")
-        docs = load_all_documents(env_vars["DATA_PATH"])
-        
-        # Split documents
-        st.info("✂️ Разделение документов на части...")
-        chunks = split_documents(docs)
-        st.success(f"Создано {len(chunks)} частей текста")
-        
-        # Get embedding function
-        embedding_function = get_embedding_function()
-        
-        # Index documents
-        st.info("🔍 Создание векторного индекса...")
-        vector_store = index_documents(chunks, embedding_function, env_vars["CHROMA_PATH"])
-        
-        st.success("✅ База знаний успешно создана!")
-        st.balloons()
-        
-        # Clear cache to reload the vector store
-        st.cache_resource.clear()
-        st.rerun()
-        
-    except Exception as e:
-        st.error(f"Ошибка при создании базы знаний: {str(e)}")
 
 if __name__ == "__main__":
     main()
