@@ -2,6 +2,7 @@ streamlit
 langchain-community
 langchain-openai 
 langchain-core
+langchain_text_splitters
 python-dotenv
 chromadb
 pypdf
