@@ -1,5 +1,6 @@
 import os
 import glob
+import tempfile
 import streamlit as st
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
@@ -120,7 +121,14 @@ def main():
     if uploaded and not st.session_state.get("upload_processed", False):
         new_docs = []
         for f in uploaded:
-            new_docs.extend(PyPDFLoader(f).load())
+            # save to a temporary file for PyPDFLoader
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(f.getbuffer())
+                tmp_path = tmp.name
+            try:
+                new_docs.extend(PyPDFLoader(tmp_path).load())
+            finally:
+                os.remove(tmp_path)
         combined = load_local_docs() + new_docs
         st.session_state.vector_store = build_vector_store(combined)
         st.session_state.upload_processed = True
@@ -132,7 +140,7 @@ def main():
 
     # ─ Build RAG chain ─
     vector_store = st.session_state.vector_store
-    rag_chain = create_rag_chain(vector_store, 'gpt-4o-mini', temperature=0)
+    rag_chain = create_rag_chain(vector_store, model_option, temperature)
 
     # ─ Chat UI ─
     if "messages" not in st.session_state:
