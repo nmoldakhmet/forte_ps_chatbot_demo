@@ -98,17 +98,6 @@ def main():
     st.title("🏦 ForteBank RAG Chatbot")
     st.markdown("Задайте вопрос по платежным системам ForteBank.")
 
-    # ─ Sidebar ─
-    st.sidebar.header("⚙️ Настройки")
-    model_option = st.sidebar.selectbox(
-        "Выберите модель OpenAI:",
-        ["gpt-4", "gpt-3.5-turbo"],
-        index=0
-    )
-    temperature = st.sidebar.slider(
-        "Temperature:", 0.0, 1.0, 0.0, 0.1
-    )
-
     # ─ List indexed PDFs ─
     st.sidebar.markdown("---")
     st.sidebar.header("📄 Индексированные PDF")
