@@ -66,7 +66,7 @@ def build_vector_store(_docs):
     )
 
 @st.cache_resource(hash_funcs={FAISS: lambda _: None})
-def create_rag_chain(vector_store, model_name, temperature):
+def create_rag_chain(vector_store, 'gpt-4o-mini', temperature=0):
     llm = ChatOpenAI(
         model=model_name,
         temperature=temperature,
